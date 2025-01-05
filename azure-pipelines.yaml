@@ -1,32 +1,47 @@
----
-  pool: Default
-  
-  trigger: none
-  
-  pr:
-    - develop
-  
-  variables:
-    webproject: 'src/Presentation/Nop.Web/Nop.Web.csproj'
-    testproject: 'src/Tests/Nop.Tests/Nop.Tests.csproj'
-  
-    
-  steps:
-    - task: DotNetCoreCLI@2
-      displayName: Build the code
-      inputs:
-        command: 'build'
-        projects: $(webproject)
-    - task: DotNetCoreCLI@2
-      displayName: publish nopCommerce
-      inputs:
-        command: 'publish'
-        publishWebProjects: false
-        projects: $(webproject)
-        arguments: '-o $(Build.ArtifactStagingDirectory)/Output'
-        zipAfterPublish: true
-        modifyOutputPath: true
-    - task: PublishBuildArtifacts@1
-      inputs:
-        pathToPublish: '$(Build.ArtifactStagingDirectory)/Output'
-        artifactName: $(Build.Repository.Name)
+trigger:
+- master  # Adjust to your branch name
+
+pool: Default
+
+variables:
+  - group: nop
+
+steps:
+
+- task: SonarCloudPrepare@3
+  inputs:
+    SonarCloud: 'SONAR_CLOUD' # Replace with your SonarCloud service connection name
+    organization: '$(SONAR_ORGANIZATION)'  # Replace with your SonarCloud organization name
+    scannerMode: 'CLI'
+    configMode: 'manual'
+    cliProjectKey: '$(SONAR_PROJECT_KEY)'       # Replace with your SonarCloud project key
+    cliProjectName: '$(SONAR_PROJECT)'      # Replace with your SonarCloud project name
+    cliProjectVersion: '1.0'
+    extraProperties: |
+      sonar.cs.opencover.reportsPaths=$(Build.SourcesDirectory)/**/coverage.opencover.xml
+  displayName: 'Prepare analysis on SonarCloud'
+
+- task: DotNetCoreCLI@2
+  inputs:
+    command: 'build'
+    projects: 'src/Presentation/Nop.Web/*.csproj'
+    arguments: '--configuration $(buildConfiguration)'
+  displayName: 'Build Project'
+
+- task: DotNetCoreCLI@2
+  inputs:
+    command: 'test'
+    projects: '**/*Tests/*.csproj'
+    arguments: '--configuration $(buildConfiguration) --collect:"XPlat Code Coverage"'
+    publishTestResults: true
+  displayName: 'Run Tests with Coverage'
+  continueOnError: true
+
+
+- task: SonarCloudAnalyze@3
+  displayName: 'Run SonarCloud Analysis'
+
+- task: SonarCloudPublish@3
+  inputs:
+    pollingTimeoutSec: '300'
+  displayName: 'Publish Quality Gate Result'
